@@ -21,9 +21,9 @@ def clean_text(text, remove_newlines=True, remove_extra_spaces=True):
     if not text:
         return ""
     if remove_newlines:
-        text = re.sub(r"[\\n\\t\\r]+", " ", text)
+        text = re.sub(r"[\n\t\r]+", " ", text)
     if remove_extra_spaces:
-        text = re.sub(r"\\s+", " ", text)
+        text = re.sub(r"\s+", " ", text) 
     return text.strip()
 
 def read_files(filepath, file_extension=".pdf"):
@@ -46,11 +46,12 @@ def read_files(filepath, file_extension=".pdf"):
                     with pdfplumber.open(file_path) as pdf:
                         for page in pdf.pages:
                             text = page.extract_text()
-                            all_data.append({
-                                "file_name": filename,
-                                "page_number": page.page_number,
-                                "text": clean_text(text),
-                            })
+                            if text:
+                                all_data.append({
+                                    "file_name": filename,
+                                    "page_number": page.page_number,
+                                    "text": clean_text(text),
+                                })
                 except Exception as e:
                     print(f"Error reading {file_path}: {e}")
     return pd.DataFrame(all_data)

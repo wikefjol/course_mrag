@@ -5,7 +5,7 @@ from langchain_core.runnables import RunnablePassthrough, RunnableParallel
 def build_rag_chain(retriever, llm):
 
     template = """
-    Use the following context to answer the question. Only use  information from the context provided.
+    Use the following context to answer the question. Only use  information from the context provided. If the answer contains mathematical notation, default to using LaTeX.
     Do not ask questions.
 
     Context: {context}
