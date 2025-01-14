@@ -1,0 +1,40 @@
+# Byte-compiled / optimized / compiled Python files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment directory
+venv/
+env/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Temporary files and logs
+*.log
+*.tmp
+*.bak
+*.swp
+*.swo
+.DS_Store
+
+# Source and build directories that shouldn't be included
+build/
+dist/
+
+# Ignoring the `sources` directory if it's meant for data not in the repo
+sources/*
+
+# Uncomment the following line if you want to track specific subfolders
+# !sources/book/
+# !sources/lectures/
+
+# Exclude system-specific files
+*.~lock.*
+Thumbs.db
+
+# Ignore editor/IDE settings
+.vscode/
+.idea/
+.env
+venv/

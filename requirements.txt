@@ -1,0 +1,19 @@
+# Libraries for basic functionality (not always needed but good to include)
+numpy     # For vector operations or embeddings
+pandas
+tqdm
+pdfplumber 
+dotenv
+
+# Core libraries for the RAG system
+chromadb # Chroma vector store library
+PyPDF2    # PDF parsing library
+python-pptx  # For reading PowerPoint presentations
+
+# LangChain
+langchain-core
+langchain-chroma
+langchain-openai
+langchain-huggingface
+langchain-ollama
+langchain-experimental
