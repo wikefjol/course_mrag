@@ -1,4 +1,5 @@
-
+import json, os
+from datetime import datetime
 import json
 import os
 import textwrap
@@ -23,9 +24,9 @@ def create_rag(sources_dir,config, handler):
 
 def generate_answers(prompt, rags):
     rag_responses = {}
-    print(f"\nQuerying all RAGs for prompt: '{prompt}'\n{'=' * 80}")
+    #print(f"\nQuerying all RAGs for prompt: '{prompt}'\n{'=' * 80}")
     for rag_name, (chain, _) in rags.items():
-        print(f"--- Querying RAG: {rag_name} ---")
+       # print(f"--- Querying RAG: {rag_name} ---")
         output = chain.invoke(prompt)
         rag_responses[rag_name] = {"answer": output["answer"], "docs": output["docs"]}
     return rag_responses
@@ -66,30 +67,37 @@ def generate_follow_up_questions(aggregation_llm, original_prompt, agent_answers
         follow_up_questions[agent_name] = follow_up_question
     return follow_up_questions
 
-# Cross-Agent Verification
-def cross_agent_verification(rags, follow_up_responses, original_prompt,follow_up_questions):
+def cross_reference(rags, follow_up_questions, follow_up_responses, original_prompt):
     cross_agent_responses = {}
-    for target_agent, follow_up_response in follow_up_responses.items():
-        cross_agent_responses[target_agent] = {}
-        for verifying_agent, (chain, _) in rags.items():
-            if verifying_agent != target_agent:
-                prompt = (
-                f"The user originally asked:\n"
-                f"'{original_prompt}'\n\n"
-                f"The follow-up question for the agent '{target_agent}' was:\n"
-                f"'{follow_up_questions[target_agent]}'\n\n"
-                f"The agent provided the following follow-up response:\n"
-                f"{follow_up_response['answer']}\n\n"
-                "Your task is to critically evaluate this response in light of the original question and the follow-up question. Specifically:\n"
-                "1. Identify any inaccuracies, gaps, or ambiguities in the response. If errors are found, correct them and provide a clear explanation.\n"
-                "2. If the response is accurate, offer additional nuance, context, or clarity to enhance its completeness and value.\n\n"
-                "Focus on ensuring the response is both correct and comprehensive while addressing the user's original and follow-up questions. Provide a concise yet thorough critique."
-                )
-                output = chain.invoke(prompt)
-                cross_agent_responses[target_agent][verifying_agent] = {
-                    "answer": output["answer"],
-                    "docs": output["docs"],
-                }
+
+    agent_names = list(rags.keys())
+    for i, target_agent in enumerate(agent_names):
+        verifier_agent = agent_names[(i + 1) % len(agent_names)]
+
+        follow_up_question = follow_up_questions.get(target_agent, "")
+        follow_up_response = follow_up_responses.get(target_agent, {}).get("answer", "")
+        docs = follow_up_responses.get(target_agent, {}).get("docs", [])
+
+        prompt = (
+            f"The user originally asked:\n'{original_prompt}'\n\n"
+            f"The follow-up question for the agent '{target_agent}' was:\n"
+            f"'{follow_up_question}'\n\n"
+            f"The agent provided the following follow-up response:\n"
+            f"{follow_up_response}\n\n"
+            "Your task is to critically evaluate this response in light of the original question and the follow-up question. Specifically:\n"
+            "1. Identify any inaccuracies, gaps, or ambiguities in the response. If errors are found, correct them and provide a clear explanation.\n"
+            "2. If the response is accurate, offer additional nuance, context, or clarity to enhance its completeness and value.\n\n"
+            "Focus on ensuring the response is both correct and comprehensive while addressing the user's original and follow-up questions. Provide a concise yet thorough critique."
+        )
+
+        verifier_chain = rags[verifier_agent][0]
+        output = verifier_chain.invoke(prompt)
+
+        cross_agent_responses.setdefault(target_agent, {})[verifier_agent] = {
+            "answer": output.get("answer", "No answer"),
+            "docs": output.get("docs", [])
+        }
+
     return cross_agent_responses
 
 def aggregate_final_response(aggregation_llm, all_responses, prompt):
@@ -164,3 +172,54 @@ def display_from_json(conversation_json):
 
     print("\nFinal Aggregated Answer:\n" + "=" * 80)
     print(textwrap.fill(conversation_json["final_answer"], width=80))
+
+
+def process_question(question, rags, aggregation_llm, log_folder):
+    # 1) Ask each RAG for initial answer
+    initial_responses = generate_answers(question, rags)
+    # 2) Aggregation LLM -> follow-up question for each RAG
+    agent_answers = {rag_name: data["answer"] for rag_name, data in initial_responses.items()}
+    follow_up_questions = generate_follow_up_questions(aggregation_llm, question, agent_answers)
+    # 3) Each RAG answers its follow-up question
+    follow_up_responses = {}
+    for agent_name, fq in follow_up_questions.items():
+        ans = generate_answers(fq, {agent_name: rags[agent_name]})
+        follow_up_responses[agent_name] = ans[agent_name]
+    # 4) Cross-reference
+    cross_agent_responses = cross_reference(rags, follow_up_questions, follow_up_responses, question)
+    # 5) Final aggregated answer
+    all_resps = {}
+    for agent_name in rags.keys():
+        all_resps[agent_name] = {
+            "initial": initial_responses[agent_name]["answer"],
+            "follow_up": follow_up_responses[agent_name]["answer"] if agent_name in follow_up_responses else "",
+        }
+    final_answer = aggregate_final_response(aggregation_llm, all_resps, question)
+    # 6) Organize results & save
+    conversation_json = organize_into_json(
+        question,
+        initial_responses,
+        follow_up_questions,
+        follow_up_responses,
+        final_answer
+    )
+    conversation_json["cross_agent_responses"] = {
+        target_rag: {
+            verifier: resp.get("answer","No answer")
+            for verifier, resp in cross_agent_responses[target_rag].items()
+        }
+        for target_rag in cross_agent_responses
+    }
+    filename = f"{log_folder}/multi_agent_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    json.dump(conversation_json, open(filename,"w"), indent=2)
+    return final_answer
+
+def run_all_questions(questions, rags, aggregation_llm, log_folder):
+    qa = {}
+    for q in questions:
+        qa[q] = process_question(q, rags, aggregation_llm, log_folder)
+    # Optionally, produce a single JSON with all Q&A
+    result_json = {"questions_and_answers": qa}
+    combined_filename = f"{log_folder}/all_questions_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    json.dump(result_json, open(combined_filename,"w"), indent=2)
+    return qa
