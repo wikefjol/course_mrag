@@ -21,6 +21,7 @@ env/
 # Source and build directories that shouldn't be included
 build/
 dist/
+old/
 
 # Ignoring the `sources` directory if it's meant for data not in the repo
 sources/*
